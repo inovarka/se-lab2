@@ -23,3 +23,16 @@ go_testedbinary {
 }
 
 // TODO: Додайте модуль для інтеграційних тестів.
+go_testedbinary {
+  name: "integration-tests",
+  pkg: "github.com/inovarka/se-lab2/integration",
+  srcs: [
+    "httptools/**/*.go",
+    "signal/**/*.go",
+    "cmd/lb/*.go"
+  ],
+  testPkg: "github.com/inovarka/se-lab2/integration",
+  testSrcs: ["balancer_test.go"],
+  optionalTest: true,
+  optionalBuild: true
+}
