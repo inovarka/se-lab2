@@ -1,24 +1,25 @@
 go_testedbinary {
   name: "server",
-  // TODO: Відкорегуйте ім'я пакета.
   pkg: "github.com/inovarka/se-lab2/cmd/server",
   srcs: [
     "httptools/**/*.go",
     "signal/**/*.go",
     "cmd/server/*.go"
-  ]
+  ],
+  testPkg: "github.com/inovarka/se-lab2/cmd/server",
+  testSrcs: ["**/*_test.go"]
 }
 
 go_testedbinary {
   name: "lb",
-  // TODO: Відкорегуйте ім'я пакета.
   pkg: "github.com/inovarka/se-lab2/cmd/lb",
   srcs: [
     "httptools/**/*.go",
     "signal/**/*.go",
     "cmd/lb/*.go"
-  ]
-  // TODO: Додайте запуск тестів для балансувальника.
+  ],
+  testPkg: "github.com/inovarka/se-lab2/cmd/lb",
+  testSrcs: ["**/*_test.go"]
 }
 
 // TODO: Додайте модуль для інтеграційних тестів.
