@@ -1,0 +1,10 @@
+language: go
+
+go:
+  - 1.16
+
+services:
+  - docker
+
+script:
+  - docker-compose -f docker-compose.yaml -f docker-compose.test.yaml up --exit-code-from test
