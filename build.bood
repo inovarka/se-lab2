@@ -21,3 +21,9 @@ go_testedbinary {
   testPkg: "./cmd/lb/..."
 }
 
+go_testedbinary {
+  name: "integration",
+  pkg: "github.com/inovarka/se-lab2/integration",
+  testPkg: "./cmd/integration/..."
+}
+
