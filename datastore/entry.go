@@ -7,63 +7,74 @@ import (
 )
 
 type entry struct {
-	key, value string
+	key   string
+	value []byte
 }
 
 func (e *entry) Encode() []byte {
-	keySize := len(e.key)
-	valueSize := len(e.value)
-	size := keySize + valueSize + 12
+	kl := len(e.key)
+	vl := len(e.value)
+	size := kl + vl + 12
 	res := make([]byte, size)
+
 	binary.LittleEndian.PutUint32(res, uint32(size))
-	binary.LittleEndian.PutUint32(res[4:], uint32(keySize))
+	binary.LittleEndian.PutUint32(res[4:], uint32(kl))
 	copy(res[8:], e.key)
-	binary.LittleEndian.PutUint32(res[keySize+8:], uint32(valueSize))
-	copy(res[keySize+12:], e.value)
+	binary.LittleEndian.PutUint32(res[kl+8:], uint32(vl))
+	copy(res[kl+12:], e.value)
+
 	return res
 }
 
 func (e *entry) Decode(input []byte) {
-	keySize := binary.LittleEndian.Uint32(input[4:])
-	keyBuffer := make([]byte, keySize)
-	copy(keyBuffer, input[8:keySize+8])
-	e.key = string(keyBuffer)
+	kl := binary.LittleEndian.Uint32(input[4:])
+	keyBuf := make([]byte, kl)
 
-	valueSize := binary.LittleEndian.Uint32(input[keySize+8:])
-	valueBuffer := make([]byte, valueSize)
-	copy(valueBuffer, input[keySize+12:keySize+12+valueSize])
-	e.value = string(valueBuffer)
+	copy(keyBuf, input[8:kl+8])
+
+	e.key = string(keyBuf)
+
+	vl := binary.LittleEndian.Uint32(input[kl+8:])
+	valBuf := make([]byte, vl)
+
+	copy(valBuf, input[kl+12:kl+12+vl])
+
+	e.value = valBuf
 }
 
-func readValue(in *bufio.Reader) (string, error) {
+func readValue(in *bufio.Reader) ([]byte, error) {
 	header, err := in.Peek(8)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+
 	keySize := int(binary.LittleEndian.Uint32(header[4:]))
-	_, err = in.Discard(keySize + 8)
-	if err != nil {
-		return "", err
+
+	if _, err = in.Discard(keySize + 8); err != nil {
+		return nil, err
 	}
 
 	header, err = in.Peek(4)
 	if err != nil {
-		return "", err
-	}
-	valueSize := int(binary.LittleEndian.Uint32(header))
-	_, err = in.Discard(4)
-	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	data := make([]byte, valueSize)
+	valSize := int(binary.LittleEndian.Uint32(header))
+
+	if _, err = in.Discard(4); err != nil {
+		return nil, err
+	}
+
+	data := make([]byte, valSize)
+
 	n, err := in.Read(data)
 	if err != nil {
-		return "", err
-	}
-	if n != valueSize {
-		return "", fmt.Errorf("can't read value bytes (read %d, expected %d)", n, valueSize)
+		return nil, err
 	}
 
-	return string(data), nil
+	if n != valSize {
+		return nil, fmt.Errorf("can't read value bytes (read %d, expected %d)", n, valSize)
+	}
+
+	return data, nil
 }

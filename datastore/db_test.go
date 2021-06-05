@@ -1,6 +1,7 @@
 package datastore
 
 import (
+	"bytes"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -9,30 +10,30 @@ import (
 )
 
 var (
-	dataset = [][]string{
-		{"key1", "value1"},
-		{"key2", "value2"},
-		{"key3", "value3"},
+	dataset = map[string][]byte{
+		"key1": []byte("value1"),
+		"key2": []byte("value2"),
+		"key3": []byte("value3"),
 	}
 
-	anotherDataset = [][]string{
-		{"key2", "value1"},
-		{"key3", "value2"},
+	anotherDataset = map[string][]byte{
+		"key2": []byte("value1"),
+		"key3": []byte("value2"),
 	}
 
-	bigDataset = [][]string{
-		{"key1", "value1"},
-		{"key2", "value2"},
-		{"key3", "value3"},
-		{"key4", "value4"},
-		{"key5", "value5"},
-		{"key6", "value6"},
-		{"key7", "value7"},
-		{"key8", "value8"},
-		{"key9", "value9"},
-		{"key10", "value10"},
-		{"key11", "value11"},
-		{"key12", "value12"},
+	bigDataset = map[string][]byte{
+		"key1":  []byte("value1"),
+		"key2":  []byte("value2"),
+		"key3":  []byte("value3"),
+		"key4":  []byte("value4"),
+		"key5":  []byte("value5"),
+		"key6":  []byte("value6"),
+		"key7":  []byte("value7"),
+		"key8":  []byte("value8"),
+		"key9":  []byte("value9"),
+		"key10": []byte("value10"),
+		"key11": []byte("value11"),
+		"key12": []byte("value12"),
 	}
 )
 
@@ -41,7 +42,13 @@ func TestDatastore_Put(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+
+	defer func(path string) {
+		err = os.RemoveAll(path)
+		if err != nil {
+			t.Log(err)
+		}
+	}(dir)
 
 	db, err := NewDatastore(dir)
 	if err != nil {
@@ -54,17 +61,19 @@ func TestDatastore_Put(t *testing.T) {
 	}
 
 	t.Run("put/get", func(t *testing.T) {
-		for _, pair := range dataset {
-			err := db.Put(pair[0], pair[1])
-			if err != nil {
-				t.Errorf("can't put %s: %s", dataset[0], err)
+		for key, val := range dataset {
+			if err = db.Put(key, val); err != nil {
+				t.Errorf("can't put %s: %s", key, err)
 			}
-			value, err := db.Get(pair[0])
-			if err != nil {
-				t.Errorf("can't get %s: %s", dataset[0], err)
+
+			var value []byte
+
+			if value, err = db.Get(key); err != nil {
+				t.Errorf("can't get %s: %s", key, err)
 			}
-			if value != pair[1] {
-				t.Errorf("wrong value returned expected %s, got %s", pair[1], value)
+
+			if !bytes.Equal(value, val) {
+				t.Errorf("wrong value returned expected %s, got %s", val, value)
 			}
 		}
 	})
@@ -73,59 +82,67 @@ func TestDatastore_Put(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	size1 := outInfo.Size()
 
 	t.Run("incremental write", func(t *testing.T) {
-		for _, pair := range dataset {
-			err := db.Put(pair[0], pair[1])
-			if err != nil {
-				t.Errorf("can't put %s: %s", dataset[0], err)
+		for key, val := range dataset {
+			if err = db.Put(key, val); err != nil {
+				t.Errorf("can't put %s: %s", key, err)
 			}
 		}
-		outInfo, err := output.Stat()
-		if err != nil {
+
+		if outInfo, err = output.Stat(); err != nil {
 			t.Fatal(err)
 		}
+
 		if size1*2 != outInfo.Size() {
 			t.Errorf("unexpected size, got %d instead of %d", outInfo.Size(), size1*2)
 		}
 	})
 
 	t.Run("new db process", func(t *testing.T) {
-		if err := db.Close(); err != nil {
-			t.Fatal(err)
-		}
-		db, err = NewDatastore(dir)
-		if err != nil {
+		if err = db.Close(); err != nil {
 			t.Fatal(err)
 		}
 
-		for _, pair := range dataset {
-			value, err := db.Get(pair[0])
+		if db, err = NewDatastore(dir); err != nil {
+			t.Fatal(err)
+		}
+
+		for key, val := range dataset {
+			value, err := db.Get(key)
 			if err != nil {
-				t.Errorf("can't get %s: %s", dataset[0], err)
+				t.Errorf("can't get %s: %s", key, err)
 			}
-			if value != pair[1] {
-				t.Errorf("wrong value returned expected %s, got %s", pair[1], value)
+
+			if !bytes.Equal(value, val) {
+				t.Errorf("wrong value returned expected %s, got %s", val, value)
 			}
 		}
 	})
 }
+
 func TestDatastore_Segmentation(t *testing.T) {
 	dir, err := ioutil.TempDir("", "test-db")
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+
+	defer func(path string) {
+		err = os.RemoveAll(path)
+		if err != nil {
+			t.Log(err)
+		}
+	}(dir)
 
 	db, err := NewDatastoreOfSize(dir, 50)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for _, pair := range dataset {
-		err = db.Put(pair[0], pair[1])
-		if err != nil {
+	for key, val := range dataset {
+		if err = db.Put(key, val); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -134,11 +151,12 @@ func TestDatastore_Segmentation(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
 	if len(files) != 2 {
 		t.Errorf("unexpected segment count, got %d instead of %d", len(files), 2)
 	}
 
-	if err := db.Close(); err != nil {
+	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -148,22 +166,27 @@ func TestDatastore_Merge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+
+	defer func(path string) {
+		err = os.RemoveAll(path)
+		if err != nil {
+			t.Log(err)
+		}
+	}(dir)
 
 	db, err := NewDatastoreMergeToSize(dir, 44, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for _, pair := range dataset {
-		err = db.Put(pair[0], pair[1])
-		if err != nil {
+	for key, val := range dataset {
+		if err = db.Put(key, val); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for _, pair := range anotherDataset {
-		err = db.Put(pair[0], pair[1])
-		if err != nil {
+
+	for key, val := range anotherDataset {
+		if err = db.Put(key, val); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -172,34 +195,37 @@ func TestDatastore_Merge(t *testing.T) {
 	if err != nil {
 		t.Error(err)
 	}
+
 	if len(files) != 3 {
 		t.Errorf("unexpected segment count before merge, got %d instead of %d", len(files), 3)
 	}
 
-	db.merge()
+	_ = db.merge()
+
 	files, err = ioutil.ReadDir(dir)
 	if err != nil {
 		t.Error(err)
 	}
+
 	if len(files) != 2 {
 		t.Errorf("unexpected segment count after merge, got %d instead of %d", len(files), 2)
 	}
 
 	mergedSegment := db.segments[1]
-	expectedMergedSegment := [][]string{
-		{"key1", "value1"},
-		{"key2", "value1"},
-		{"key3", "value3"},
+	expectedMergedSegment := map[string][]byte{
+		"key1": []byte("value3"),
+		"key2": []byte("value1"),
+		"key3": []byte("value1"),
 	}
 
-	for _, pair := range expectedMergedSegment {
-		value, err := mergedSegment.get(pair[0])
+	for key, val := range expectedMergedSegment {
+		value, err := mergedSegment.get(key)
 		if err != nil {
-			t.Errorf("can't get %s: %s", pair[0], err)
+			t.Errorf("can't get %s: %s", key, err)
 		}
 
-		if value != pair[1] {
-			t.Errorf("wrong value returned expected %s, got %s", pair[1], value)
+		if !bytes.Equal(value, val) {
+			t.Errorf("wrong value returned expected %s, got %s", val, value)
 		}
 	}
 
@@ -213,7 +239,13 @@ func TestDatastore_Concurrency(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(dir)
+
+	defer func(path string) {
+		err = os.RemoveAll(path)
+		if err != nil {
+			t.Log(err)
+		}
+	}(dir)
 
 	db, err := NewDatastoreOfSize(dir, 44)
 	if err != nil {
@@ -222,21 +254,22 @@ func TestDatastore_Concurrency(t *testing.T) {
 
 	resultChannel := make(chan int)
 
-	for _, pair := range bigDataset {
-		pair := pair
+	for key, val := range bigDataset {
+		key, val := key, val
+
 		go func() {
-			err := db.Put(pair[0], pair[1])
-			if err != nil {
-				t.Errorf("can't put %s: %s", pair[0], err)
+			if err = db.Put(key, val); err != nil {
+				t.Errorf("can't put %s: %s", key, err)
 			}
 
-			value, err := db.Get(pair[0])
-			if err != nil {
-				t.Errorf("can't get %s: %s", pair[0], err)
+			var value []byte
+
+			if value, err = db.Get(key); err != nil {
+				t.Errorf("can't get %s: %s", key, err)
 			}
 
-			if value != pair[1] {
-				t.Errorf("wrong value returned expected %s, got %s", pair[1], value)
+			if !bytes.Equal(value, val) {
+				t.Errorf("wrong value returned expected %s, got %s", val, value)
 			}
 
 			resultChannel <- 1
@@ -247,20 +280,20 @@ func TestDatastore_Concurrency(t *testing.T) {
 		<-resultChannel
 	}
 
-	for _, pair := range bigDataset {
-		value, err := db.Get(pair[0])
+	for key, val := range bigDataset {
+		value, err := db.Get(key)
 		if err != nil {
-			t.Errorf("can't get %s: %s", pair[0], err)
+			t.Errorf("can't get %s: %s", key, err)
 		}
 
-		if value != pair[1] {
-			t.Errorf("wrong value returned expected %s, got %s", pair[1], value)
+		if !bytes.Equal(value, val) {
+			t.Errorf("wrong value returned expected %s, got %s", val, value)
 		}
 	}
 
 	time.Sleep(1 * time.Second)
 
-	if err := db.Close(); err != nil {
+	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
 }

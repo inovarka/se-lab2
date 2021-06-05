@@ -2,9 +2,11 @@ package datastore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,8 +17,15 @@ import (
 	"golang.org/x/sync/semaphore"
 )
 
-const maxReadThreads = 8
-const maxBlockSize = 10 * 1024 * 1024
+const (
+	maxReadThreads = 8
+	maxBlockSize   = 10 * 1024 * 1024
+)
+
+var (
+	ErrNotFound      = errors.New("entry does not exist")
+	ErrCorruptedFile = errors.New("corrupted file")
+)
 
 type hashIndex map[string]int64
 
@@ -53,12 +62,14 @@ func NewDatastoreOfSize(dir string, currentBlockSize int64) (*Datastore, error) 
 
 func NewDatastoreMergeToSize(dir string, currentBlockSize int64, mergingPolicy bool) (*Datastore, error) {
 	outputPath := filepath.Join(dir, segmentPrefix+currentSegmentSuffix)
+
 	f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}
 
 	var segments []*segment
+
 	files, err := ioutil.ReadDir(dir)
 	if err != nil {
 		return nil, err
@@ -71,8 +82,7 @@ func NewDatastoreMergeToSize(dir string, currentBlockSize int64, mergingPolicy b
 				index: make(hashIndex),
 			}
 
-			err := s.restore()
-			if err != io.EOF {
+			if err = s.restore(); !errors.Is(err, io.EOF) {
 				return nil, err
 			}
 
@@ -83,9 +93,11 @@ func NewDatastoreMergeToSize(dir string, currentBlockSize int64, mergingPolicy b
 	sort.Slice(segments, func(n, m int) bool {
 		suffixFirst := segments[n].path[len(dir+segmentPrefix)+1:]
 		suffixSecond := segments[m].path[len(dir+segmentPrefix)+1:]
+
 		if suffixFirst == currentSegmentSuffix || suffixSecond == mergedSegmentSuffix {
 			return true
 		}
+
 		if suffixSecond == currentSegmentSuffix || suffixFirst == mergedSegmentSuffix {
 			return false
 		}
@@ -117,7 +129,7 @@ func NewDatastoreMergeToSize(dir string, currentBlockSize int64, mergingPolicy b
 				return
 			}
 
-			db.merge()
+			_ = db.merge()
 		}
 	}()
 
@@ -127,7 +139,7 @@ func NewDatastoreMergeToSize(dir string, currentBlockSize int64, mergingPolicy b
 				return
 			}
 
-			db.put(el)
+			_ = db.put(el)
 		}
 	}()
 
@@ -137,34 +149,39 @@ func NewDatastoreMergeToSize(dir string, currentBlockSize int64, mergingPolicy b
 func (db *Datastore) Close() error {
 	db.mergingChannel <- 0
 	db.putChannel <- putQuery{entry: nil}
+
 	return db.out.Close()
 }
 
-func (db *Datastore) Get(key string) (string, error) {
-	db.semaphore.Acquire(context.TODO(), 1)
+func (db *Datastore) Get(key string) ([]byte, error) {
+	if err := db.semaphore.Acquire(context.TODO(), 1); err != nil {
+		return nil, err
+	}
+
 	defer db.semaphore.Release(1)
 
 	var (
-		value string
+		value []byte
 		err   error
 	)
 
-	for _, segment := range db.segments {
-		value, err = segment.get(key)
-		if err == nil {
+	for _, seg := range db.segments {
+		if value, err = seg.get(key); err == nil {
 			return value, nil
 		}
 	}
 
-	return "", err
+	return nil, err
 }
 
-func (db *Datastore) Put(key, value string) error {
+func (db *Datastore) Put(key string, value []byte) error {
 	callback := make(chan error)
 	e := &entry{key: key, value: value}
 
 	db.putChannel <- putQuery{entry: e, callback: callback}
+
 	res := <-callback
+
 	return res
 }
 
@@ -176,20 +193,26 @@ func (db *Datastore) put(pe putQuery) error {
 	}
 
 	e := pe.entry
+
 	n, err := db.out.Write(e.Encode())
 	if err != nil {
 		pe.callback <- err
+
 		return err
 	}
+
 	db.mutex.Lock()
+
 	activeSegment := db.segments[0]
 	activeSegment.index[e.key] = activeSegment.offset
 	activeSegment.offset += int64(n)
+
 	db.mutex.Unlock()
 
 	fi, err := os.Stat(activeSegment.path)
 	if err != nil {
 		pe.callback <- nil
+
 		return fmt.Errorf("can not read active file stat: %v", err)
 	}
 
@@ -197,11 +220,13 @@ func (db *Datastore) put(pe putQuery) error {
 		_, err = db.addSegment()
 		if err != nil {
 			pe.callback <- nil
+
 			return err
 		}
 	}
 
 	pe.callback <- nil
+
 	return nil
 }
 
@@ -209,14 +234,17 @@ func (db *Datastore) addSegment() (*segment, error) {
 	db.mutex.Lock()
 	defer db.mutex.Unlock()
 
-	err := db.out.Close()
-	if err != nil {
+	if err := db.out.Close(); err != nil {
 		return nil, err
 	}
 
 	segmentSuffix := 0
+
 	if len(db.segments) > 1 {
-		lastSavedSegmentSuffix := db.segments[1].path[len(db.dir+segmentPrefix)+1:]
+		var (
+			lastSavedSegmentSuffix = db.segments[1].path[len(db.dir+segmentPrefix)+1:]
+		)
+
 		if prevSegmentSuffix, err := strconv.Atoi(lastSavedSegmentSuffix); err == nil {
 			segmentSuffix = prevSegmentSuffix + 1
 		}
@@ -225,16 +253,17 @@ func (db *Datastore) addSegment() (*segment, error) {
 	segmentPath := filepath.Join(db.dir, fmt.Sprintf("%v%v", segmentPrefix, segmentSuffix))
 	outputPath := filepath.Join(db.dir, segmentPrefix+currentSegmentSuffix)
 
-	err = os.Rename(outputPath, segmentPath)
-	if err != nil {
+	if err := os.Rename(outputPath, segmentPath); err != nil {
 		return nil, err
 	}
+
 	db.segments[0].path = segmentPath
 
 	f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}
+
 	db.out = f
 
 	s := &segment{
@@ -249,6 +278,7 @@ func (db *Datastore) addSegment() (*segment, error) {
 func (db *Datastore) merge() error {
 	toMerge := db.segments[1:]
 	segments := make([]*segment, len(toMerge))
+
 	copy(segments, toMerge)
 
 	if len(segments) < 2 {
@@ -265,20 +295,28 @@ func (db *Datastore) merge() error {
 	}
 
 	segmentPath := filepath.Join(db.dir, segmentPrefix)
+
 	f, err := os.OpenFile(segmentPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
 	if err != nil {
 		return fmt.Errorf("error occured during merging: %v", err)
 	}
-	defer f.Close()
 
-	segment := &segment{
+	defer func(f *os.File) {
+		err = f.Close()
+		if err != nil {
+			log.Panic(err)
+		}
+	}(f)
+
+	seg := &segment{
 		path:  segmentPath,
 		index: make(hashIndex),
 	}
 
 	for k, s := range keysSegments {
-		value, err := s.get(k)
-		if value != "" && err == nil {
+		var value []byte
+
+		if value, err = s.get(k); value != nil && err == nil {
 			e := (&entry{
 				key:   k,
 				value: value,
@@ -288,29 +326,36 @@ func (db *Datastore) merge() error {
 			if err != nil {
 				return fmt.Errorf("error occured during merging: %v", err)
 			}
-			segment.index[k] = segment.offset
-			segment.offset += int64(n)
+
+			seg.index[k] = seg.offset
+			seg.offset += int64(n)
 		}
 	}
 
 	db.mutex.Lock()
 
 	newPath := segmentPath + mergedSegmentSuffix
-	err = os.Rename(segmentPath, newPath)
-	if err != nil {
+
+	if err = os.Rename(segmentPath, newPath); err != nil {
 		db.mutex.Unlock()
+
 		return fmt.Errorf("can't merge: %v", err)
 	}
-	segment.path = newPath
+
+	seg.path = newPath
 	to := len(db.segments) - len(segments)
-	db.segments = append(db.segments[:to], segment)
+	db.segments = append(db.segments[:to], seg)
 
 	db.mutex.Unlock()
 
 	for _, s := range segments {
 		if newPath != s.path {
-			os.Remove(s.path)
+			err = os.Remove(s.path)
+			if err != nil {
+				log.Panic(err)
+			}
 		}
 	}
+
 	return nil
 }
