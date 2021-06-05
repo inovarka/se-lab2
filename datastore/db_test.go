@@ -213,9 +213,9 @@ func TestDatastore_Merge(t *testing.T) {
 
 	mergedSegment := db.segments[1]
 	expectedMergedSegment := map[string][]byte{
-		"key1": []byte("value3"),
+		"key1": []byte("value1"),
 		"key2": []byte("value1"),
-		"key3": []byte("value1"),
+		"key3": []byte("value3"),
 	}
 
 	for key, val := range expectedMergedSegment {
