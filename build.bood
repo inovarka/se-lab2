@@ -21,5 +21,16 @@ go_testedbinary {
   testPkg: "./cmd/lb/..."
 }
 
+go_testedbinary {
+  name: "db",
+  pkg: "github.com/inovarka/se-lab2/cmd/db",
+  srcs: [
+    "httptools/**/*.go",
+    "datastore/**/*.go",
+    "signal/**/*.go",
+    "cmd/db/*.go"
+  ],
+  testPkg: "./datastore/..."
+} 
 
 
