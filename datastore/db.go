@@ -1,6 +1,7 @@
 package datastore
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -10,8 +11,11 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"golang.org/x/sync/semaphore"
 )
 
+const maxReadThreads = 8
 const maxBlockSize = 10 * 1024 * 1024
 
 type hashIndex map[string]int64
@@ -22,8 +26,9 @@ type putQuery struct {
 }
 
 type Datastore struct {
-	mutex *sync.RWMutex
-	out   *os.File
+	mutex     *sync.RWMutex
+	semaphore *semaphore.Weighted
+	out       *os.File
 
 	dir              string
 	currentBlockSize int64
@@ -96,6 +101,7 @@ func NewDatastoreMergeToSize(dir string, currentBlockSize int64, mergingPolicy b
 
 	db := &Datastore{
 		mutex:            new(sync.RWMutex),
+		semaphore:        semaphore.NewWeighted(maxReadThreads),
 		out:              f,
 		dir:              dir,
 		currentBlockSize: currentBlockSize,
@@ -135,8 +141,8 @@ func (db *Datastore) Close() error {
 }
 
 func (db *Datastore) Get(key string) (string, error) {
-	db.mutex.RLock()
-	defer db.mutex.RUnlock()
+	db.semaphore.Acquire(context.TODO(), 1)
+	defer db.semaphore.Release(1)
 
 	var (
 		value string
