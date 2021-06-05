@@ -24,6 +24,11 @@ go_testedbinary {
 go_testedbinary {
   name: "integration",
   pkg: "github.com/inovarka/se-lab2/integration",
-  testPkg: "./cmd/integration/..."
+  srcs: [
+    "httptools/**/*.go",
+    "signal/**/*.go",
+    "cmd/server/*.go"
+  ],
+  testPkg: "./integration/..."
 }
 
