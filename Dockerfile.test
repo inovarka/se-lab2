@@ -3,13 +3,18 @@ FROM golang:1.16 as build
 RUN apt-get update && apt-get install -y ninja-build
 
 # TODO: Змініть на власну реалізацію системи збірки
-RUN go get -u github.com/inovarka/se-lab1/build/cmd/bood
+WORKDIR /go/src
+RUN git clone https://github.com/inovarka/se-lab1
+WORKDIR /go/src/se-lab1
+RUN go get -u ./build/cmd/bood
 
-WORKDIR /go/src/practice-2
+WORKDIR /go/src/se-lab2
 COPY . .
 
 # TODO: Замініть на запуск bood, який призводить до виконання інтеграційних тестів.
 # ENTRYPOINT ["echo", "ok"]
 
-ENTRYPOINT ["bood", "./out/test/integration.log"]
+WORKDIR /go/src/se-lab2/integration
+
+ENTRYPOINT bood 2>&1 | tee integration.log
 
