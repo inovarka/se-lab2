@@ -6,8 +6,7 @@ go_testedbinary {
     "signal/**/*.go",
     "cmd/server/*.go"
   ],
-  testPkg: "github.com/inovarka/se-lab2/cmd/server",
-  testSrcs: ["**/*_test.go"]
+  testPkg: "./cmd/server/..."
 }
 
 go_testedbinary {
@@ -15,24 +14,10 @@ go_testedbinary {
   pkg: "github.com/inovarka/se-lab2/cmd/lb",
   srcs: [
     "httptools/**/*.go",
+    "server/**/*.go",
     "signal/**/*.go",
     "cmd/lb/*.go"
   ],
-  testPkg: "github.com/inovarka/se-lab2/cmd/lb",
-  testSrcs: ["**/*_test.go"]
+  testPkg: "./cmd/lb/..."
 }
 
-// TODO: Додайте модуль для інтеграційних тестів.
-go_testedbinary {
-  name: "integration-tests",
-  pkg: "github.com/inovarka/se-lab2/integration",
-  srcs: [
-    "httptools/**/*.go",
-    "signal/**/*.go",
-    "cmd/lb/*.go"
-  ],
-  testPkg: "github.com/inovarka/se-lab2/integration",
-  testSrcs: ["balancer_test.go"],
-  optionalTest: true,
-  optionalBuild: true
-}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
 	"net/http"
 )
 
@@ -13,7 +12,7 @@ type Report map[string][]string
 func (r Report) Process(req *http.Request) {
 	author := req.Header.Get("lb-author")
 	counter := req.Header.Get("lb-req-cnt")
-	log.Printf("GET some-data from [%s] request [%s]", author, counter)
+	//log.Printf("GET some-data from [%s] request [%s]", author, counter)
 
 	if len(author) > 0 {
 		list := r[author]
